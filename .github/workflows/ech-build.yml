@@ -1,0 +1,66 @@
+name: Build ECH binaries
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: linux-amd64
+            goos: linux
+            goarch: amd64
+            cgo: '0'
+          - target: windows-amd64
+            goos: windows
+            goarch: amd64
+            cgo: '0'
+          - target: android-arm64
+            goos: android
+            goarch: arm64
+            cgo: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24.2'
+
+      - name: Build ${{ matrix.target }}
+        shell: bash
+        env:
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: ${{ matrix.cgo }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          extension=''
+          if [[ "$GOOS" == android ]]; then
+            export CC="$ANDROID_NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+            test -x "$CC"
+          elif [[ "$GOOS" == windows ]]; then
+            extension='.exe'
+          fi
+
+          version="${GITHUB_SHA::12}"
+          go build -trimpath -ldflags "-s -w -X main.version=$version" -o "dist/ck-client-${{ matrix.target }}$extension" ./cmd/ck-client
+          if [[ "$GOOS" != android ]]; then
+            go build -trimpath -ldflags "-s -w -X main.version=$version" -o "dist/ck-server-${{ matrix.target }}$extension" ./cmd/ck-server
+          fi
+          file dist/*
+          (cd dist && sha256sum ck-* > SHA256SUMS)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cloak-ech-${{ matrix.target }}
+          path: dist/
+          if-no-files-found: error

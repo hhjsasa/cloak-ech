@@ -163,6 +163,26 @@ when `Transport` is set to `CDN`. If unset, it will default to "/". This option 
 HTTP request after a TLS session is extablished. It's mainly for a Cloak server behind a reverse proxy, while only
 requests under specific url path are forwarded.
 
+`EnableECH` enables Encrypted Client Hello for the TLS connection to the CDN. It only works with `CDN` transport and
+defaults to `false`. When enabled, `ECHConfigList` is required. Set it to the base64 value of the `ech` parameter in
+the CDN hostname's DNS HTTPS record (for example, inspect it with `dig HTTPS your-cdn-hostname.example +short`). Use
+the value itself, without the `ech=` prefix or surrounding quotes. The CDN must support ECH for that hostname.
+`ServerName` must be that hostname and its certificate must validate; do not use `ServerName: random` with ECH.
+Avoid `AlternativeNames` unless every name is covered by the same ECH configuration and a valid CDN certificate.
+The ECH public name remains visible in the outer ClientHello. Cloak fails the connection if ECH is rejected; it does
+not silently retry without ECH. Refresh `ECHConfigList` when the CDN rotates its ECH keys.
+
+Example CDN client settings:
+
+```json
+{
+  "Transport": "CDN",
+  "ServerName": "your-cdn-hostname.example",
+  "EnableECH": true,
+  "ECHConfigList": "base64-value-from-HTTPS-record"
+}
+```
+
 `NumConn` is the amount of underlying TCP connections you want to use. The default of 4 should be appropriate for most
 people. Setting it too high will hinder the performance. Setting it to 0 will disable connection multiplexing and each
 TCP connection will spawn a separate short-lived session that will be closed after it is terminated. This makes it

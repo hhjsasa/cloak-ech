@@ -2,6 +2,7 @@ package client
 
 import (
 	"crypto"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
@@ -38,6 +39,8 @@ type RawConfig struct {
 	Transport     string // nullable
 	CDNOriginHost string // nullable
 	CDNWsUrlPath  string // nullable
+	EnableECH     bool   // nullable; CDN mode only
+	ECHConfigList string // nullable; base64-encoded ECHConfigList for CDN mode
 	StreamTimeout int    // nullable
 	KeepAlive     int    // nullable
 }
@@ -83,7 +86,7 @@ func ssvToJson(ssv string) (ret []byte) {
 		r = strings.Replace(r, `\;`, `;`, -1)
 		return r
 	}
-	unquoted := []string{"NumConn", "StreamTimeout", "KeepAlive", "UDP"}
+	unquoted := []string{"NumConn", "StreamTimeout", "KeepAlive", "UDP", "EnableECH"}
 	lines := strings.Split(unescape(ssv), ";")
 	ret = []byte("{")
 	for _, ln := range lines {
@@ -220,6 +223,26 @@ func (raw *RawConfig) ProcessRawConfig(worldState common.WorldState) (local Loca
 	// Transport and (if TLS mode), browser
 	switch strings.ToLower(raw.Transport) {
 	case "cdn":
+		var echConfigList []byte
+		if raw.EnableECH {
+			if strings.EqualFold(raw.ServerName, "random") {
+				err = fmt.Errorf("EnableECH requires a fixed ServerName")
+				return
+			}
+			if raw.ECHConfigList == "" {
+				err = fmt.Errorf("ECHConfigList is required when EnableECH is true")
+				return
+			}
+			echConfigList, err = base64.StdEncoding.DecodeString(raw.ECHConfigList)
+			if err != nil || len(echConfigList) == 0 {
+				err = fmt.Errorf("ECHConfigList must be a non-empty base64-encoded ECHConfigList")
+				return
+			}
+			if _, err = newCDNTLSConn(&net.TCPConn{}, auth.MockDomain, echConfigList); err != nil {
+				err = fmt.Errorf("invalid ECHConfigList: %w", err)
+				return
+			}
+		}
 		var cdnDomainPort string
 		if raw.CDNOriginHost == "" {
 			cdnDomainPort = net.JoinHostPort(raw.RemoteHost, raw.RemotePort)
@@ -231,12 +254,17 @@ func (raw *RawConfig) ProcessRawConfig(worldState common.WorldState) (local Loca
 		}
 
 		remote.Transport = TransportConfig{
-			mode:  "cdn",
-			wsUrl: "ws://" + cdnDomainPort + raw.CDNWsUrlPath,
+			mode:          "cdn",
+			wsUrl:         "ws://" + cdnDomainPort + raw.CDNWsUrlPath,
+			echConfigList: echConfigList,
 		}
 	case "direct":
 		fallthrough
 	default:
+		if raw.EnableECH {
+			err = fmt.Errorf("EnableECH requires CDN transport")
+			return
+		}
 		var browser browser
 		switch strings.ToLower(raw.BrowserSig) {
 		case "firefox":

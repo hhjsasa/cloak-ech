@@ -15,18 +15,22 @@ import (
 
 type WSOverTLS struct {
 	*common.WebSocketConn
-	wsUrl string
+	wsUrl         string
+	echConfigList []byte
 }
 
-func (ws *WSOverTLS) Handshake(rawConn net.Conn, authInfo AuthInfo) (sessionKey [32]byte, err error) {
+func newCDNTLSConn(rawConn net.Conn, serverName string, echConfigList []byte) (*utls.UConn, error) {
 	utlsConfig := &utls.Config{
-		ServerName:         authInfo.MockDomain,
-		InsecureSkipVerify: true,
+		ServerName:         serverName,
+		InsecureSkipVerify: len(echConfigList) == 0,
+	}
+	if len(echConfigList) > 0 {
+		utlsConfig.MinVersion = utls.VersionTLS13
+		utlsConfig.EncryptedClientHelloConfigList = echConfigList
 	}
 	uconn := utls.UClient(rawConn, utlsConfig, utls.HelloChrome_Auto)
-	err = uconn.BuildHandshakeState()
-	if err != nil {
-		return
+	if err := uconn.BuildHandshakeState(); err != nil {
+		return nil, err
 	}
 	for i, extension := range uconn.Extensions {
 		_, ok := extension.(*utls.ALPNExtension)
@@ -35,10 +39,20 @@ func (ws *WSOverTLS) Handshake(rawConn net.Conn, authInfo AuthInfo) (sessionKey 
 			break
 		}
 	}
+	return uconn, nil
+}
 
+func (ws *WSOverTLS) Handshake(rawConn net.Conn, authInfo AuthInfo) (sessionKey [32]byte, err error) {
+	uconn, err := newCDNTLSConn(rawConn, authInfo.MockDomain, ws.echConfigList)
+	if err != nil {
+		return
+	}
 	err = uconn.Handshake()
 	if err != nil {
 		return
+	}
+	if len(ws.echConfigList) > 0 && !uconn.ConnectionState().ECHAccepted {
+		return sessionKey, errors.New("CDN did not accept ECH")
 	}
 
 	u, err := url.Parse(ws.wsUrl)
