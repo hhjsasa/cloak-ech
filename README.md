@@ -181,6 +181,7 @@ still checks DNS first so this fallback does not prevent automatic key updates. 
 Avoid `AlternativeNames` unless every name is covered by the same ECH configuration and a valid CDN certificate.
 The ECH public name remains visible in the outer ClientHello. Cloak fails the connection if ECH is rejected; it does
 not silently retry without ECH. If the CDN supplies authenticated retry configs, the next connection uses them.
+With ECH enabled, CDN mode uses a compact Firefox TLS fingerprint to avoid a large first handshake packet.
 
 Example CDN client settings:
 

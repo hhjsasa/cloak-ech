@@ -96,6 +96,7 @@ func TestCDNECHOuterClientHello(t *testing.T) {
 	outer := uconn.HandshakeState.Hello.Raw
 	assert.Contains(t, string(outer), "cloudflare-ech.com")
 	assert.False(t, bytes.Contains(outer, []byte("secret.example")), "inner SNI leaked in ClientHelloOuter")
+	assert.Less(t, len(outer), 1500, "ECH ClientHello should fit in a typical network packet")
 }
 
 func TestParseConfig(t *testing.T) {

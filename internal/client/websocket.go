@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/cbeuw/Cloak/internal/common"
 	"github.com/gorilla/websocket"
@@ -20,6 +21,8 @@ type WSOverTLS struct {
 	rawConn   net.Conn
 }
 
+const cdnECHHandshakeTimeout = 15 * time.Second
+
 func newCDNTLSConn(rawConn net.Conn, serverName string, echConfigList []byte) (*utls.UConn, error) {
 	utlsConfig := &utls.Config{
 		ServerName:         serverName,
@@ -29,7 +32,13 @@ func newCDNTLSConn(rawConn net.Conn, serverName string, echConfigList []byte) (*
 		utlsConfig.MinVersion = utls.VersionTLS13
 		utlsConfig.EncryptedClientHelloConfigList = echConfigList
 	}
-	uconn := utls.UClient(rawConn, utlsConfig, utls.HelloChrome_Auto)
+	helloID := utls.HelloChrome_Auto
+	if len(echConfigList) > 0 {
+		// Chrome's padded ClientHello is over 1,700 bytes with ECH. Firefox's
+		// smaller hello is less likely to stall on paths that drop large flights.
+		helloID = utls.HelloFirefox_Auto
+	}
+	uconn := utls.UClient(rawConn, utlsConfig, helloID)
 	if err := uconn.BuildHandshakeState(); err != nil {
 		return nil, err
 	}
@@ -56,7 +65,15 @@ func (ws *WSOverTLS) Handshake(rawConn net.Conn, authInfo AuthInfo) (sessionKey 
 	if err != nil {
 		return
 	}
+	if ws.echSource != nil {
+		if err = rawConn.SetDeadline(time.Now().Add(cdnECHHandshakeTimeout)); err != nil {
+			return
+		}
+	}
 	err = uconn.Handshake()
+	if ws.echSource != nil {
+		_ = rawConn.SetDeadline(time.Time{})
+	}
 	if err != nil {
 		var rejected *utls.ECHRejectionError
 		if ws.echSource != nil && errors.As(err, &rejected) {
