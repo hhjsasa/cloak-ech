@@ -36,7 +36,7 @@ type echConfigSource struct {
 	now       func() time.Time
 }
 
-func newECHConfigSource(dohURL string, bootstrap []byte) (*echConfigSource, error) {
+func newECHConfigSource(dohURL, proxyURL string, bootstrap []byte) (*echConfigSource, error) {
 	urls := []string{defaultECHDoHURL, fallbackECHDoHURL}
 	if dohURL != "" {
 		urls = []string{dohURL}
@@ -47,13 +47,22 @@ func newECHConfigSource(dohURL string, bootstrap []byte) (*echConfigSource, erro
 			return nil, fmt.Errorf("ECHDoHURL must be an HTTPS URL: %q", endpoint)
 		}
 	}
+	var proxy func(*http.Request) (*url.URL, error)
+	if proxyURL != "" {
+		u, err := url.Parse(proxyURL)
+		if err != nil || u.Host == "" || u.Path != "" || u.RawQuery != "" || u.Fragment != "" ||
+			(u.Scheme != "http" && u.Scheme != "https" && u.Scheme != "socks5") {
+			return nil, fmt.Errorf("ECHDoHProxy must be an HTTP, HTTPS, or SOCKS5 proxy URL: %q", proxyURL)
+		}
+		proxy = http.ProxyURL(u)
+	}
 	return &echConfigSource{
 		dohURLs: urls,
 		client: &http.Client{
 			Timeout: 5 * time.Second,
 			Transport: &http.Transport{
-				// Avoid routing this bootstrap request back through Cloak.
-				Proxy:             nil,
+				// An explicit proxy can bootstrap DoH when direct HTTPS is blocked.
+				Proxy:             proxy,
 				ForceAttemptHTTP2: true,
 			},
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },

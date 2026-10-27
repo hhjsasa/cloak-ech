@@ -42,6 +42,7 @@ type RawConfig struct {
 	EnableECH     bool   // nullable; CDN mode only
 	ECHConfigList string // nullable; base64-encoded fallback ECHConfigList for CDN mode
 	ECHDoHURL     string // nullable; HTTPS DNS resolver for ECH configuration
+	ECHDoHProxy   string // nullable; independent HTTP(S) or SOCKS5 proxy for DoH
 	StreamTimeout int    // nullable
 	KeepAlive     int    // nullable
 }
@@ -242,7 +243,7 @@ func (raw *RawConfig) ProcessRawConfig(worldState common.WorldState) (local Loca
 					return
 				}
 			}
-			echSource, err = newECHConfigSource(raw.ECHDoHURL, bootstrap)
+			echSource, err = newECHConfigSource(raw.ECHDoHURL, raw.ECHDoHProxy, bootstrap)
 			if err != nil {
 				return
 			}

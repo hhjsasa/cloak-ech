@@ -167,7 +167,11 @@ requests under specific url path are forwarded.
 defaults to `false`. When enabled, Cloak fetches the `ech` parameter from the `ServerName` DNS HTTPS record over
 DNS-over-HTTPS. It caches the result for the record's TTL and refreshes it when a new connection needs it. By default,
 it tries `https://1.1.1.1/dns-query`, then `https://dns.google/dns-query`. Set `ECHDoHURL` to use another HTTPS DoH
-endpoint. DoH requests go directly to the resolver, so that endpoint must be reachable before the proxy is ready.
+endpoint. By default, DoH requests go directly to the resolver, so that endpoint must be reachable before Cloak is ready.
+
+If direct access to DoH is blocked, set `ECHDoHProxy` to an independent HTTP, HTTPS, or SOCKS5 proxy URL, for example
+`http://192.168.1.2:8118`. Do not point it at the Shadowsocks connection using this Cloak plugin: that connection
+cannot start until the ECH configuration has been fetched. Cloak does not automatically use `HTTPS_PROXY` for DoH.
 
 `ECHConfigList` is optional. If set, it is a base64-encoded fallback for temporary DoH failures. You can obtain it
 from the `ech` parameter in the CDN hostname's DNS HTTPS record (for example, with

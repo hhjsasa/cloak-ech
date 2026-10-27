@@ -62,6 +62,14 @@ func TestCDNECHConfig(t *testing.T) {
 	_, _, _, err = config.ProcessRawConfig(common.RealWorldState)
 	assert.ErrorContains(t, err, "HTTPS URL")
 	config.ECHDoHURL = ""
+	config.ECHDoHProxy = "socks5://127.0.0.1:1080"
+	_, remote, _, err = config.ProcessRawConfig(common.RealWorldState)
+	assert.NoError(t, err)
+	assert.NotNil(t, remote.Transport.echSource)
+	config.ECHDoHProxy = "file:///tmp/proxy"
+	_, _, _, err = config.ProcessRawConfig(common.RealWorldState)
+	assert.ErrorContains(t, err, "ECHDoHProxy")
+	config.ECHDoHProxy = ""
 
 	config.ServerName = "random"
 	_, _, _, err = config.ProcessRawConfig(common.RealWorldState)
