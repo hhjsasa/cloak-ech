@@ -12,8 +12,8 @@ type Transport interface {
 type TransportConfig struct {
 	mode string
 
-	wsUrl         string
-	echConfigList []byte
+	wsUrl     string
+	echSource *echConfigSource
 
 	browser browser
 }
@@ -22,8 +22,8 @@ func (t TransportConfig) CreateTransport() Transport {
 	switch t.mode {
 	case "cdn":
 		return &WSOverTLS{
-			wsUrl:         t.wsUrl,
-			echConfigList: t.echConfigList,
+			wsUrl:     t.wsUrl,
+			echSource: t.echSource,
 		}
 	case "direct":
 		return &DirectTLS{

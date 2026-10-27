@@ -15,8 +15,9 @@ import (
 
 type WSOverTLS struct {
 	*common.WebSocketConn
-	wsUrl         string
-	echConfigList []byte
+	wsUrl     string
+	echSource *echConfigSource
+	rawConn   net.Conn
 }
 
 func newCDNTLSConn(rawConn net.Conn, serverName string, echConfigList []byte) (*utls.UConn, error) {
@@ -43,15 +44,27 @@ func newCDNTLSConn(rawConn net.Conn, serverName string, echConfigList []byte) (*
 }
 
 func (ws *WSOverTLS) Handshake(rawConn net.Conn, authInfo AuthInfo) (sessionKey [32]byte, err error) {
-	uconn, err := newCDNTLSConn(rawConn, authInfo.MockDomain, ws.echConfigList)
+	ws.rawConn = rawConn
+	var echConfigList []byte
+	if ws.echSource != nil {
+		echConfigList, err = ws.echSource.get(authInfo.MockDomain)
+		if err != nil {
+			return
+		}
+	}
+	uconn, err := newCDNTLSConn(rawConn, authInfo.MockDomain, echConfigList)
 	if err != nil {
 		return
 	}
 	err = uconn.Handshake()
 	if err != nil {
+		var rejected *utls.ECHRejectionError
+		if ws.echSource != nil && errors.As(err, &rejected) {
+			ws.echSource.reject(authInfo.MockDomain, echConfigList, rejected.RetryConfigList)
+		}
 		return
 	}
-	if len(ws.echConfigList) > 0 && !uconn.ConnectionState().ECHAccepted {
+	if ws.echSource != nil && !uconn.ConnectionState().ECHAccepted {
 		return sessionKey, errors.New("CDN did not accept ECH")
 	}
 
@@ -93,6 +106,9 @@ func (ws *WSOverTLS) Handshake(rawConn net.Conn, authInfo AuthInfo) (sessionKey 
 func (ws *WSOverTLS) Close() error {
 	if ws.WebSocketConn != nil {
 		return ws.WebSocketConn.Close()
+	}
+	if ws.rawConn != nil {
+		return ws.rawConn.Close()
 	}
 	return nil
 }

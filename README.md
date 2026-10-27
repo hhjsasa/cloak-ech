@@ -164,13 +164,19 @@ HTTP request after a TLS session is extablished. It's mainly for a Cloak server 
 requests under specific url path are forwarded.
 
 `EnableECH` enables Encrypted Client Hello for the TLS connection to the CDN. It only works with `CDN` transport and
-defaults to `false`. When enabled, `ECHConfigList` is required. Set it to the base64 value of the `ech` parameter in
-the CDN hostname's DNS HTTPS record (for example, inspect it with `dig HTTPS your-cdn-hostname.example +short`). Use
-the value itself, without the `ech=` prefix or surrounding quotes. The CDN must support ECH for that hostname.
+defaults to `false`. When enabled, Cloak fetches the `ech` parameter from the `ServerName` DNS HTTPS record over
+DNS-over-HTTPS. It caches the result for the record's TTL and refreshes it when a new connection needs it. By default,
+it tries `https://1.1.1.1/dns-query`, then `https://dns.google/dns-query`. Set `ECHDoHURL` to use another HTTPS DoH
+endpoint. DoH requests go directly to the resolver, so that endpoint must be reachable before the proxy is ready.
+
+`ECHConfigList` is optional. If set, it is a base64-encoded fallback for temporary DoH failures. You can obtain it
+from the `ech` parameter in the CDN hostname's DNS HTTPS record (for example, with
+`dig HTTPS your-cdn-hostname.example +short`). Use the value without the `ech=` prefix or surrounding quotes. Cloak
+still checks DNS first so this fallback does not prevent automatic key updates. The CDN must support ECH for that hostname.
 `ServerName` must be that hostname and its certificate must validate; do not use `ServerName: random` with ECH.
 Avoid `AlternativeNames` unless every name is covered by the same ECH configuration and a valid CDN certificate.
 The ECH public name remains visible in the outer ClientHello. Cloak fails the connection if ECH is rejected; it does
-not silently retry without ECH. Refresh `ECHConfigList` when the CDN rotates its ECH keys.
+not silently retry without ECH. If the CDN supplies authenticated retry configs, the next connection uses them.
 
 Example CDN client settings:
 
@@ -178,8 +184,7 @@ Example CDN client settings:
 {
   "Transport": "CDN",
   "ServerName": "your-cdn-hostname.example",
-  "EnableECH": true,
-  "ECHConfigList": "base64-value-from-HTTPS-record"
+  "EnableECH": true
 }
 ```
 

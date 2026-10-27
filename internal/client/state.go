@@ -40,7 +40,8 @@ type RawConfig struct {
 	CDNOriginHost string // nullable
 	CDNWsUrlPath  string // nullable
 	EnableECH     bool   // nullable; CDN mode only
-	ECHConfigList string // nullable; base64-encoded ECHConfigList for CDN mode
+	ECHConfigList string // nullable; base64-encoded fallback ECHConfigList for CDN mode
+	ECHDoHURL     string // nullable; HTTPS DNS resolver for ECH configuration
 	StreamTimeout int    // nullable
 	KeepAlive     int    // nullable
 }
@@ -223,23 +224,26 @@ func (raw *RawConfig) ProcessRawConfig(worldState common.WorldState) (local Loca
 	// Transport and (if TLS mode), browser
 	switch strings.ToLower(raw.Transport) {
 	case "cdn":
-		var echConfigList []byte
+		var echSource *echConfigSource
 		if raw.EnableECH {
 			if strings.EqualFold(raw.ServerName, "random") {
 				err = fmt.Errorf("EnableECH requires a fixed ServerName")
 				return
 			}
-			if raw.ECHConfigList == "" {
-				err = fmt.Errorf("ECHConfigList is required when EnableECH is true")
-				return
+			var bootstrap []byte
+			if raw.ECHConfigList != "" {
+				bootstrap, err = base64.StdEncoding.DecodeString(raw.ECHConfigList)
+				if err != nil || len(bootstrap) == 0 {
+					err = fmt.Errorf("ECHConfigList must be a non-empty base64-encoded ECHConfigList")
+					return
+				}
+				if _, err = newCDNTLSConn(&net.TCPConn{}, auth.MockDomain, bootstrap); err != nil {
+					err = fmt.Errorf("invalid ECHConfigList: %w", err)
+					return
+				}
 			}
-			echConfigList, err = base64.StdEncoding.DecodeString(raw.ECHConfigList)
-			if err != nil || len(echConfigList) == 0 {
-				err = fmt.Errorf("ECHConfigList must be a non-empty base64-encoded ECHConfigList")
-				return
-			}
-			if _, err = newCDNTLSConn(&net.TCPConn{}, auth.MockDomain, echConfigList); err != nil {
-				err = fmt.Errorf("invalid ECHConfigList: %w", err)
+			echSource, err = newECHConfigSource(raw.ECHDoHURL, bootstrap)
+			if err != nil {
 				return
 			}
 		}
@@ -254,9 +258,9 @@ func (raw *RawConfig) ProcessRawConfig(worldState common.WorldState) (local Loca
 		}
 
 		remote.Transport = TransportConfig{
-			mode:          "cdn",
-			wsUrl:         "ws://" + cdnDomainPort + raw.CDNWsUrlPath,
-			echConfigList: echConfigList,
+			mode:      "cdn",
+			wsUrl:     "ws://" + cdnDomainPort + raw.CDNWsUrlPath,
+			echSource: echSource,
 		}
 	case "direct":
 		fallthrough

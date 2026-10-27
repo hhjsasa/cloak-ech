@@ -36,11 +36,13 @@ func TestCDNECHConfig(t *testing.T) {
 	config := testCDNRawConfig()
 	_, remote, _, err := config.ProcessRawConfig(common.RealWorldState)
 	assert.NoError(t, err)
-	assert.Empty(t, remote.Transport.echConfigList)
+	assert.Nil(t, remote.Transport.echSource)
 
 	config.EnableECH = true
-	_, _, _, err = config.ProcessRawConfig(common.RealWorldState)
-	assert.ErrorContains(t, err, "ECHConfigList is required")
+	_, remote, _, err = config.ProcessRawConfig(common.RealWorldState)
+	assert.NoError(t, err)
+	assert.NotNil(t, remote.Transport.echSource)
+	assert.Empty(t, remote.Transport.echSource.bootstrap)
 
 	config.ECHConfigList = "not-base64"
 	_, _, _, err = config.ProcessRawConfig(common.RealWorldState)
@@ -53,8 +55,13 @@ func TestCDNECHConfig(t *testing.T) {
 	config.ECHConfigList = base64.StdEncoding.EncodeToString(configList)
 	_, remote, _, err = config.ProcessRawConfig(common.RealWorldState)
 	assert.NoError(t, err)
-	assert.Equal(t, configList, remote.Transport.echConfigList)
-	assert.Equal(t, configList, remote.Transport.CreateTransport().(*WSOverTLS).echConfigList)
+	assert.Equal(t, configList, remote.Transport.echSource.bootstrap)
+	assert.Same(t, remote.Transport.echSource, remote.Transport.CreateTransport().(*WSOverTLS).echSource)
+
+	config.ECHDoHURL = "http://insecure.example/dns-query"
+	_, _, _, err = config.ProcessRawConfig(common.RealWorldState)
+	assert.ErrorContains(t, err, "HTTPS URL")
+	config.ECHDoHURL = ""
 
 	config.ServerName = "random"
 	_, _, _, err = config.ProcessRawConfig(common.RealWorldState)
